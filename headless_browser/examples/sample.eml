@@ -1,0 +1,15 @@
+MIME-Version: 1.0
+From: sender@example.org
+To: recipient@example.org
+Subject: Demo invitation
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+<!doctype html>
+<html lang="ru">
+<body>
+  <p>Приглашаем на встречу &amp; обсуждение проекта.</p>
+  <p><a href="https://example.org/event" title="Встреча">Подтвердите участие</a></p>
+  <p>Ответьте на это письмо, если остались вопросы.</p>
+</body>
+</html>
