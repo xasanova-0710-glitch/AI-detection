@@ -1,4 +1,6 @@
 playwright>=1.40
 numpy>=1.26
-scipy>=1.11
 scikit-learn>=1.4
+torch>=2.6,<3
+transformers>=4.57.1,<5
+safetensors>=0.5,<1

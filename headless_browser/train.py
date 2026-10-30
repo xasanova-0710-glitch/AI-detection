@@ -1,12 +1,14 @@
-"""One HTML-markup classifier: normalized markup TF-IDF + structure + logistic regression."""
+"""DistilBERT classifier for normalized HTML markup."""
 from __future__ import annotations
 
 import argparse
 import html
 import json
 import math
+import random
 import re
 from collections import Counter
+from copy import deepcopy
 from html.parser import HTMLParser
 from pathlib import Path
 from time import perf_counter
@@ -64,7 +66,6 @@ def normalized_value(value):
 
 def normalize_css(value):
     value = re.sub(r"/\*.*?\*/", "", value, flags=re.S)
-    # Only declarations survive: selector IDs/classes and literal content disappear.
     declarations = []
     for name, content in re.findall(r"([-\w]+)\s*:\s*([^;{}]+)", value):
         name = "--CUSTOM" if name.startswith("--") else name.lower()
@@ -162,30 +163,11 @@ def markup_features(raw):
     return parser.representation(), parser.features()
 
 
-def dependencies():
-    try:
-        import numpy as np
-        from scipy.sparse import csr_matrix, hstack
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.metrics import f1_score, roc_auc_score
-    except ImportError as error:
-        raise RuntimeError("Install ML dependencies: python -m pip install -r requirements.txt") from error
-    return np, csr_matrix, hstack, TfidfVectorizer, LogisticRegression, f1_score, roc_auc_score
-
-
-def matrix(records, vectorizer, fit=False):
-    np, csr_matrix, hstack, *_ = dependencies()
-    prepared = [markup_features(record.html) for record in records]
-    text = [item[0] for item in prepared]
-    tfidf = vectorizer.fit_transform(text) if fit else vectorizer.transform(text)
-    return hstack([tfidf, csr_matrix(np.asarray([item[1] for item in prepared]))]).tocsr()
-
 
 def metrics(labels, scores, threshold):
     if not labels:
         return {"count": 0, "roc_auc": None, "f1": None, "fpr": None}
-    *_, f1_score, roc_auc_score = dependencies()
+    from sklearn.metrics import f1_score, roc_auc_score
     predictions = [int(score >= threshold) for score in scores]
     negative = [pred for label, pred in zip(labels, predictions) if label == 0]
     return {"count": len(labels),
@@ -226,76 +208,207 @@ def ensure_splits(records, seed=42):
     assert_no_leakage(records)
 
 
-def train_model(records, max_features=20000, seed=42):
+
+
+DEFAULT_CHECKPOINT = "distilbert/distilbert-base-multilingual-cased"
+BACKEND = "html_distilbert"
+FORMAT_VERSION = 3
+PROCESSING["neural_input"] = "canonical_markup_with_log_structural_counts_v1"
+
+
+def dependencies():
+    try:
+        import torch
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+    except ImportError as error:
+        raise RuntimeError("Install dependencies: python -m pip install -r requirements.txt") from error
+    return torch, AutoModelForSequenceClassification, AutoTokenizer
+
+
+def resolve_device(name):
+    torch, *_ = dependencies()
+    if name == "auto":
+        name = "cuda" if torch.cuda.is_available() else "cpu"
+    if name == "cuda" and not torch.cuda.is_available():
+        raise ValueError("CUDA is not available; use --device cpu")
+    if name == "mps" and not torch.backends.mps.is_available():
+        raise ValueError("MPS is not available; use --device cpu")
+    return torch.device(name)
+
+
+def model_input(record):
+    markup, counts = markup_features(record.html)
+    structure = " ".join(f"{name}={value:.4f}" for name, value in zip(FEATURE_NAMES, counts))
+    return "[STRUCTURE] " + structure + " [MARKUP] " + markup
+
+
+def encode_document(record, tokenizer, settings):
+    encoded = tokenizer(
+        model_input(record), max_length=settings["max_length"], stride=settings["stride"],
+        truncation=True, return_overflowing_tokens=True, return_token_type_ids=False,
+        padding=False,
+    )
+    return [{"input_ids": ids, "attention_mask": mask}
+            for ids, mask in zip(encoded["input_ids"], encoded["attention_mask"])]
+
+
+def document_logit(model, tokenizer, windows, chunk_batch_size, device):
+    torch, *_ = dependencies()
+    margins = []
+    for start in range(0, len(windows), chunk_batch_size):
+        batch = tokenizer.pad(windows[start:start + chunk_batch_size], padding=True, return_tensors="pt")
+        batch = {key: value.to(device) for key, value in batch.items()
+                 if key in ("input_ids", "attention_mask")}
+        logits = model(**batch).logits
+        margins.append(logits[:, 1] - logits[:, 0])
+    values = torch.cat(margins)
+    return torch.logsumexp(values, dim=0) - math.log(len(windows))
+
+
+def validate_metadata(artifact):
+    if artifact.get("format_version") != FORMAT_VERSION or artifact.get("backend") != BACKEND:
+        raise ValueError("Unsupported/legacy model; retrain with DistilBERT")
+    if artifact.get("processing") != PROCESSING:
+        raise ValueError("Unsupported HTML preprocessing configuration")
+    inference = artifact["inference"]
+    if inference.get("aggregation") != "logmeanexp_margin":
+        raise ValueError("Unsupported window aggregation")
+    if (type(inference["max_length"]) is not int or inference["max_length"] < 8
+            or type(inference["stride"]) is not int or not 0 <= inference["stride"] < inference["max_length"] - 2
+            or type(inference["chunk_batch_size"]) is not int or inference["chunk_batch_size"] < 1):
+        raise ValueError("Invalid window settings")
+    threshold = artifact["threshold"]
+    if (type(threshold) not in (int, float) or not math.isfinite(threshold)
+            or not 0 <= threshold <= math.nextafter(1.0, math.inf)):
+        raise ValueError("Invalid decision threshold")
+
+
+class HTMLClassifier:
+    def __init__(self, model, tokenizer, artifact, device="cpu"):
+        validate_metadata(artifact)
+        if model.config.model_type != "distilbert" or model.config.num_labels != 2:
+            raise ValueError("Expected a DistilBERT classifier with two outputs")
+        if artifact["inference"]["max_length"] > model.config.max_position_embeddings:
+            raise ValueError("max_length exceeds the model position limit")
+        self.model, self.tokenizer, self.artifact = model, tokenizer, artifact
+        self.device = resolve_device(device)
+        self.model.to(self.device)
+        self.model.eval()
+
+    @classmethod
+    def load(cls, path, device="auto"):
+        path = Path(path)
+        metadata = path / "metadata.json" if path.is_dir() else path
+        artifact = json.loads(metadata.read_text(encoding="utf-8-sig"))
+        validate_metadata(artifact)
+        root = metadata.parent
+        _, AutoModelForSequenceClassification, AutoTokenizer = dependencies()
+        tokenizer = AutoTokenizer.from_pretrained(root, use_fast=True, local_files_only=True,
+                                                  trust_remote_code=False)
+        model = AutoModelForSequenceClassification.from_pretrained(
+            root, local_files_only=True, use_safetensors=True, trust_remote_code=False,
+            attn_implementation="eager",
+        )
+        return cls(model, tokenizer, artifact, device)
+
+    def save(self, path):
+        path = Path(path)
+        if path.exists() and (not path.is_dir() or any(path.iterdir())):
+            raise ValueError("Model output must be a new or empty directory")
+        path.mkdir(parents=True, exist_ok=True)
+        self.model.save_pretrained(path, safe_serialization=True)
+        self.tokenizer.save_pretrained(path)
+        (path / "metadata.json").write_text(
+            json.dumps(self.artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    def predict(self, record):
+        record.validate()
+        torch, *_ = dependencies()
+        settings = self.artifact["inference"]
+        windows = encode_document(record, self.tokenizer, settings)
+        self.model.eval()
+        with torch.inference_mode():
+            logit = document_logit(self.model, self.tokenizer, windows,
+                                   settings["chunk_batch_size"], self.device)
+            probability = float(torch.sigmoid(logit).item())
+        return {"html_ai_probability": probability,
+                "html_ai_label": int(probability >= self.artifact["threshold"])}
+
+
+def train_model(records, *, checkpoint=DEFAULT_CHECKPOINT, revision=None, epochs=3,
+                learning_rate=2e-5, batch_size=2, max_length=512, stride=64,
+                chunk_batch_size=4, seed=42, device="auto", local_files_only=False):
     ensure_splits(records, seed)
     training = [record for record in records if record.split == "train" and record.label is not None]
     validation = [record for record in records if record.split == "validation" and record.label is not None]
     if any({record.label for record in subset} != {0, 1} for subset in (training, validation)):
         raise ValueError("HTML training requires both confirmed classes in train and validation")
-    np, _, _, TfidfVectorizer, LogisticRegression, *_ = dependencies()
+    if (type(epochs) is not int or epochs < 1 or type(batch_size) is not int or batch_size < 1
+            or type(chunk_batch_size) is not int or chunk_batch_size < 1
+            or not math.isfinite(learning_rate) or learning_rate <= 0
+            or type(max_length) is not int or max_length < 8
+            or type(stride) is not int or not 0 <= stride < max_length - 2):
+        raise ValueError("Invalid training parameters")
+    torch, AutoModelForSequenceClassification, AutoTokenizer = dependencies()
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     started = perf_counter()
-    vectorizer = TfidfVectorizer(analyzer="char", ngram_range=(2, 5), lowercase=True, max_features=max_features)
-    features = matrix(training, vectorizer, fit=True)
-    classifier = LogisticRegression(max_iter=1000, class_weight="balanced", random_state=seed)
-    classifier.fit(features, [record.label for record in training])
-    scores = classifier.predict_proba(matrix(validation, vectorizer))[:, 1]
-    labels = [record.label for record in validation]
-    threshold = select_threshold(labels, scores)
-    return {
-        "format_version": 2, "backend": "html_tfidf_logistic", "processing": PROCESSING,
-        "vectorizer": {"analyzer": "char", "ngram_range": [2, 5], "lowercase": True, "norm": "l2",
-                       "vocabulary": {key: int(value) for key, value in vectorizer.vocabulary_.items()},
-                       "idf": vectorizer.idf_.tolist()},
-        "classifier": {"coefficients": classifier.coef_[0].tolist(), "intercept": float(classifier.intercept_[0])},
-        "threshold": float(threshold), "validation_metrics": metrics(labels, scores, threshold),
-        "training_params": {"seed": seed, "max_features": max_features, "class_weight": "balanced",
-                            "threshold_selection": "validation_only", "probability_calibration": "none"},
+    tokenizer = AutoTokenizer.from_pretrained(
+        checkpoint, revision=revision, use_fast=True, local_files_only=local_files_only,
+        trust_remote_code=False,
+    )
+    model = AutoModelForSequenceClassification.from_pretrained(
+        checkpoint, revision=revision, num_labels=2, local_files_only=local_files_only,
+        trust_remote_code=False, use_safetensors=True, attn_implementation="eager",
+        id2label={0: "HUMAN_HTML", 1: "AI_HTML"}, label2id={"HUMAN_HTML": 0, "AI_HTML": 1},
+    )
+    settings = {"max_length": max_length, "stride": stride, "chunk_batch_size": chunk_batch_size,
+                "aggregation": "logmeanexp_margin"}
+    artifact = {
+        "format_version": FORMAT_VERSION, "backend": BACKEND,
+        "processing": deepcopy(PROCESSING), "threshold": .5,
+        "base_model": str(checkpoint), "base_revision": getattr(model.config, "_commit_hash", None) or revision,
+        "inference": settings,
+        "training_params": {"seed": seed, "epochs": epochs, "learning_rate": learning_rate,
+                            "batch_size": batch_size, "weight_decay": .01,
+                            "encoder_trainable": True, "threshold_selection": "validation_only",
+                            "probability_calibration": "none"},
         "fit_identity_keys": sorted(set().union(*(identity_keys(record) for record in training + validation))),
-        "training_seconds": perf_counter() - started,
     }
-
-
-class HTMLClassifier:
-    def __init__(self, artifact):
-        if artifact.get("format_version") != 2 or artifact.get("backend") != "html_tfidf_logistic":
-            raise ValueError("Unsupported/legacy model; retrain the HTML-only classifier")
-        if artifact.get("processing") != PROCESSING:
-            raise ValueError("Unsupported HTML preprocessing configuration; retrain")
-        self.artifact = artifact
-        parameters = artifact["vectorizer"]
-        vocabulary, idf = parameters["vocabulary"], parameters["idf"]
-        coefficients = artifact["classifier"]["coefficients"]
-        if (sorted(vocabulary.values()) != list(range(len(vocabulary))) or len(idf) != len(vocabulary)
-                or len(coefficients) != len(vocabulary) + len(FEATURE_NAMES)):
-            raise ValueError("Invalid feature dimensions")
-        values = [*idf, *coefficients, artifact["classifier"]["intercept"], artifact["threshold"]]
-        if not all(type(value) in (int, float) and math.isfinite(value) for value in values) or any(value <= 0 for value in idf):
-            raise ValueError("Nonfinite/invalid model parameters")
-        if {key: parameters[key] for key in ("analyzer", "ngram_range", "lowercase", "norm")} != {
-            "analyzer": "char", "ngram_range": [2, 5], "lowercase": True, "norm": "l2"
-        }:
-            raise ValueError("Unsupported vectorizer configuration")
-        self.vectorizer = None
-
-    @classmethod
-    def load(cls, path):
-        return cls(json.loads(path.read_text(encoding="utf-8-sig")))
-
-    def predict(self, record):
-        record.validate()
-        np, _, _, TfidfVectorizer, *_ = dependencies()
-        if self.vectorizer is None:
-            parameters = self.artifact["vectorizer"]
-            self.vectorizer = TfidfVectorizer(analyzer="char", ngram_range=(2, 5),
-                                             lowercase=True, vocabulary=parameters["vocabulary"])
-            self.vectorizer.idf_ = np.asarray(parameters["idf"])
-        features = matrix([record], self.vectorizer)
-        logit = float((features @ np.asarray(self.artifact["classifier"]["coefficients"]))[0])
-        logit += self.artifact["classifier"]["intercept"]
-        probability = 1 / (1 + math.exp(-max(-700, min(700, logit))))
-        # Classification only: no predicted spans or reused annotation intervals.
-        return {"html_ai_probability": probability,
-                "html_ai_label": int(probability >= self.artifact["threshold"])}
+    classifier = HTMLClassifier(model, tokenizer, artifact, device)
+    prepared = [encode_document(record, tokenizer, settings) for record in training]
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=.01)
+    positives = sum(record.label == 1 for record in training)
+    positive_weight = torch.tensor((len(training) - positives) / positives, device=classifier.device)
+    history = []
+    for epoch in range(epochs):
+        order = list(range(len(training)))
+        random.Random(seed + epoch).shuffle(order)
+        model.train()
+        total_loss = 0.0
+        for start in range(0, len(order), batch_size):
+            group = order[start:start + batch_size]
+            optimizer.zero_grad(set_to_none=True)
+            for index in group:
+                logit = document_logit(model, tokenizer, prepared[index], chunk_batch_size, classifier.device)
+                target = torch.tensor(float(training[index].label), device=classifier.device)
+                loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                    logit, target, pos_weight=positive_weight)
+                total_loss += float(loss.detach().item())
+                (loss / len(group)).backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+        history.append({"epoch": epoch + 1, "train_loss": total_loss / len(training)})
+        print(f"Epoch {epoch + 1}/{epochs}: HTML train loss={history[-1]['train_loss']:.4f}")
+    model.eval()
+    scores = [classifier.predict(record)["html_ai_probability"] for record in validation]
+    labels = [record.label for record in validation]
+    artifact["threshold"] = float(select_threshold(labels, scores))
+    artifact["validation_metrics"] = metrics(labels, scores, artifact["threshold"])
+    artifact["training_history"] = history
+    artifact["training_seconds"] = perf_counter() - started
+    return classifier
 
 
 def evaluate_model(records, classifier):
@@ -324,29 +437,47 @@ def evaluate_model(records, classifier):
 
 def main(argv=None):
     configure_console()
-    parser = argparse.ArgumentParser(description="Обучить один классификатор происхождения HTML-разметки")
+    parser = argparse.ArgumentParser(description="Обучить DistilBERT для происхождения HTML-разметки")
     parser.add_argument("dataset", type=Path)
     parser.add_argument("-o", "--output", type=Path)
-    parser.add_argument("--evaluate", type=Path, metavar="MODEL")
+    parser.add_argument("--evaluate", type=Path, metavar="MODEL_DIR")
+    parser.add_argument("--checkpoint", default=DEFAULT_CHECKPOINT)
+    parser.add_argument("--revision")
+    parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument("--learning-rate", type=float, default=2e-5)
+    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--max-length", type=int, default=512)
+    parser.add_argument("--stride", type=int, default=64)
+    parser.add_argument("--chunk-batch-size", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--max-features", type=int, default=20000)
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
+    parser.add_argument("--local-files-only", action="store_true")
     args = parser.parse_args(argv)
-    output = args.output or Path("metrics.json" if args.evaluate else "model.json")
-    if output.resolve() in {args.dataset.resolve(), *([args.evaluate.resolve()] if args.evaluate else [])}:
-        parser.error("Output must differ from the input dataset/model")
+    output = args.output or Path("metrics.json" if args.evaluate else "artifacts/html_distilbert")
+    if (output.resolve() == args.dataset.resolve() or args.dataset.resolve().is_relative_to(output.resolve())
+            or (args.evaluate and output.resolve().is_relative_to(args.evaluate.resolve()))):
+        parser.error("Output must differ from and not contain input data/model")
     try:
         records = read_records(args.dataset)
         if args.evaluate:
-            classifier = HTMLClassifier.load(args.evaluate)
-            ensure_splits(records, classifier.artifact["training_params"]["seed"])
+            classifier = HTMLClassifier.load(args.evaluate, args.device)
             artifact = {"test_metrics": evaluate_model(records, classifier)}
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         else:
-            ensure_splits(records, args.seed)
-            artifact = train_model(records, args.max_features, args.seed)
-            artifact["test_metrics"] = evaluate_model(records, HTMLClassifier(artifact))
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        if "validation_metrics" in artifact:
+            if output.suffix.lower() in (".json", ".jsonl"):
+                raise ValueError("DistilBERT output is a directory, not a JSON file")
+            if output.exists() and (not output.is_dir() or any(output.iterdir())):
+                raise ValueError("Choose a new or empty model directory")
+            classifier = train_model(
+                records, checkpoint=args.checkpoint, revision=args.revision, epochs=args.epochs,
+                learning_rate=args.learning_rate, batch_size=args.batch_size,
+                max_length=args.max_length, stride=args.stride, chunk_batch_size=args.chunk_batch_size,
+                seed=args.seed, device=args.device, local_files_only=args.local_files_only,
+            )
+            artifact = classifier.artifact
+            artifact["test_metrics"] = evaluate_model(records, classifier)
+            classifier.save(output)
             print("HTML validation:", json.dumps(artifact["validation_metrics"]))
         print("HTML test:", json.dumps(artifact["test_metrics"]))
         print(f"Сохранено: {output.resolve()}")
