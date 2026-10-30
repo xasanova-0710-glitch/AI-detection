@@ -22,7 +22,11 @@ python -m playwright install chromium
 
 Chromium/Playwright нужны только для URL. Чтение локальных EML/HTML/JSON/JSONL,
 экспорт текста и валидация используют стандартную библиотеку.
-Обучение использует существующие numpy/scipy/scikit-learn; BERT и LLM не нужны.
+Обучение использует PyTorch, Transformers и Safetensors.
+Для CPU PyTorch можно установить отдельно перед requirements:
+```shell
+python -m pip install "torch>=2.6,<3" --index-url https://download.pytorch.org/whl/cpu
+```
 
 ## Сбор
 
@@ -154,8 +158,8 @@ id совпадает с HTML-датасетом. HTML-метки текстов
 ## Обучение
 
 ```shell
-python train.py labeled.json -o model.json
-python train.py labeled.json --evaluate model.json -o metrics.json
+python train.py labeled.json -o artifacts/html_distilbert --epochs 3
+python train.py labeled.json --evaluate artifacts/html_distilbert -o metrics.json
 ```
 
 Для train и validation нужны оба подтверждённых класса. label=null пропускается
@@ -171,18 +175,39 @@ python train.py labeled.json --evaluate model.json -o metrics.json
 Сохраняются теги, вложенность, имена атрибутов, структурные свойства CSS и счётчики HTML.
 Текст скриптов/комментариев и буквальные CSS-строки не становятся текстовыми признаками.
 
-Символьный TF-IDF и логистическая регрессия обучаются только на train.
+Используется [distilbert/distilbert-base-multilingual-cased](https://huggingface.co/distilbert/distilbert-base-multilingual-cased)
+с двумя выходами классификации. Энкодер и классификационная голова дообучаются
+только на train. Видимый текст, CTA и анкоры в модель не передаются.
+
+К нормализованной разметке добавляются структурные счётчики в текстовом виде.
+Длинные документы разбиваются на перекрывающиеся окна: по умолчанию 512 токенов
+с перекрытием 64. Оконные оценки объединяются в один результат на документ
+через logmeanexp разности логитов; границы AI-фрагментов не вычисляются.
+
 На validation выбирается порог по F1 при FPR <= 0.20; это подбор порога,
 а не отдельная калибровка вероятности. На test считаются ROC-AUC, F1, FPR,
 в том числе по языкам/маркетингу при наличии метаданных.
-model.json содержит параметры нормализации, словарь/IDF, коэффициенты, порог,
-параметры обучения и метрики. Исходные письма в модель не записываются.
+
+Результат — каталог модели, а не один JSON:
+- model.safetensors — веса DistilBERT;
+- config.json и файлы токенизатора — конфигурация;
+- metadata.json — нормализация, параметры окон, порог, параметры обучения и метрики.
+
+Выходной каталог должен быть новым или пустым. artifacts/ исключён из Git.
+Первый запуск обучения скачивает публичный checkpoint; письма обрабатываются локально.
+Для заранее загруженной модели укажите --checkpoint путь_к_модели --local-files-only.
+
+Параметры: --epochs, --learning-rate, --batch-size (документы на шаг оптимизатора),
+--chunk-batch-size (окна на один проход), --max-length, --stride,
+--device auto/cpu/cuda/mps, --seed, --checkpoint и --revision.
+Полное дообучение на CPU может быть длительным; ограничение в 10 минут не гарантируется.
+Команды в этом разделе предназначены для последующего запуска обучения пользователем.
 
 ## Предсказание
 
 ```shell
-python main.py mail.eml predicted.json --model model.json
-python main.py labeled.json predicted.json --model model.json --text-export text_data.json
+python main.py mail.eml predicted.json --model artifacts/html_distilbert
+python main.py labeled.json predicted.json --model artifacts/html_distilbert --text-export text_data.json
 ```
 
 Подтверждённые label и ai_spans сохраняются. Добавляется только:
@@ -212,8 +237,8 @@ python main.py legacy.jsonl migrated.jsonl --text-export text_data.jsonl
 Неразмеченные документы остаются неизвестными; положительная метка без интервалов
 мигрирует с ai_spans=null. Частичная HTML-зона не превращается в метку всего документа.
 Противоречивые подтверждённые HTML-метки отклоняются.
-Связи родителя/группы сохраняются. Старые многозонные модели несовместимы:
-HTML-классификатор нужно переобучить.
+Связи родителя/группы сохраняются. Старые многозонные и TF-IDF-модели несовместимы:
+для DistilBERT требуется отдельное обучение.
 
 ## Проверка
 
@@ -225,5 +250,7 @@ python test_pipeline.py -v
 Проверяются схема/интервалы, чтение источников, группы и дубликаты, отсутствие
 видимого текста в представлении модели, независимый текстовый экспорт,
 разделение train/validation/test и сохранение разметки при предсказании.
-Синтетические тесты проверяют работу программы; их результаты не доказывают
-качество определения AI-происхождения на реальных письмах.
+Тесты загрузки/сохранения и предсказаний используют маленькую случайно
+инициализированную конфигурацию DistilBERT локально, без скачивания checkpoint
+и без обновления весов. Обучение в тестах не запускается.
+Результаты тестов не доказывают качество определения AI-происхождения на реальных письмах.

@@ -162,7 +162,7 @@ def migrate_legacy(data):
     for new, old in (("parent_id", "parent_email_id"), ("source", "source_path")):
         if data.get(old) is not None:
             converted[new] = data[old]
-    # Legacy CTA/anchor/URL labels and all legacy model predictions are discarded.
+    
     return converted
 
 
@@ -365,7 +365,7 @@ class SourceParser(HTMLParser):
         match = ENTITY.match(self.raw, start)
         if match:
             decoded = html.unescape(match.group())
-            # An entity may decode to multiple Unicode codepoints.
+            
             if not any(node.tag in HIDDEN for node in self.stack):
                 self.pieces.append(decoded)
                 self.mapping.extend([[start, match.end()]] * len(decoded))
@@ -630,6 +630,10 @@ def build_dataset(inputs, output, *, text_export=None, model=None, metadata=None
         protected.add(model.resolve())
     if len({path.resolve() for path in outputs}) != len(outputs) or any(path.resolve() in protected for path in outputs):
         raise ValueError("Outputs must differ from each other and all input files/model")
+    if model and (model.is_dir() or model.name == "metadata.json"):
+        model_root = model.resolve() if model.is_dir() else model.resolve().parent
+        if any(path.resolve().is_relative_to(model_root) for path in outputs):
+            raise ValueError("Outputs must not overwrite checkpoint files")
     predictor = None
     if model:
         if __package__:
@@ -713,7 +717,7 @@ def main(argv=None):
     parser.add_argument("source", help="EML, папка писем, ZIP/TAR, HTML, URL, urls.txt, sources.csv или JSON/JSONL")
     parser.add_argument("output", type=Path, help="Выходной HTML-датасет .json/.jsonl")
     parser.add_argument("--text-export", type=Path, help="Отдельный неразмеченный текст/CTA/ссылки для участника команды")
-    parser.add_argument("--model", type=Path, help="HTML-классификатор из train.py")
+    parser.add_argument("--model", type=Path, help="Каталог DistilBERT из train.py")
     parser.add_argument("--label", "--html-label", dest="label", type=parse_label, default=argparse.SUPPRESS)
     for name in ("language", "email_type", "group_id", "annotation_source", "generation_method", "generator_model"):
         parser.add_argument("--" + name.replace("_", "-"), default=argparse.SUPPRESS)

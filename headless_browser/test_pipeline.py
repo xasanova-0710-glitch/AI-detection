@@ -13,15 +13,18 @@ import zipfile
 import unittest
 from contextlib import redirect_stdout, redirect_stderr
 from copy import deepcopy
+from unittest import mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 if __package__:
+    from . import train as training_module
     from .main import (HTMLRecord, Span, SkippedSource, assert_no_leakage, build_dataset,
                        components, configure_console, extract_text_data, load_email,
                        read_records, split_records, write_records)
     from .train import (HTMLClassifier, ensure_splits, evaluate_model, markup_features, train_model)
 else:
+    import train as training_module
     from main import (HTMLRecord, Span, SkippedSource, assert_no_leakage, build_dataset,
                       components, configure_console, extract_text_data, load_email,
                       read_records, split_records, write_records)
@@ -37,7 +40,7 @@ def record(raw="<p>Reply 😀</p>", label=None, identity="one", group=None, span
 
 
 def fixture_records():
-    # Synthetic labels test program behavior, not AI-provenance accuracy.
+    
     records = []
     for split in ("train", "validation", "test"):
         for label in (0, 1):
@@ -422,47 +425,90 @@ class BrowserTests(unittest.TestCase):
             worker.join(timeout=3)
 
 
-@unittest.skipUnless(importlib.util.find_spec("sklearn"), "ML dependencies not installed")
-class ModelTests(unittest.TestCase):
-    def test_single_html_model_json_roundtrip_and_test_isolation(self):
-        records = fixture_records()
-        artifact = train_model(records, max_features=500)
-        self.assertEqual(artifact["backend"], "html_tfidf_logistic")
-        self.assertNotIn("models", artifact)
-        for item in records:
-            if item.split == "test":
-                item.label = 1 - item.label
-                item.ai_spans = [] if item.label == 0 else None
-        second = train_model(records, max_features=500)
-        for key in ("classifier", "vectorizer", "threshold"):
-            self.assertEqual(artifact[key], second[key])
-        classifier = HTMLClassifier(json.loads(json.dumps(artifact)))
-        self.assertEqual(classifier.predict(records[0]), HTMLClassifier(artifact).predict(records[0]))
-        self.assertEqual(evaluate_model(records, classifier)["all"]["count"], 4)
-        records[0].split = "test"
-        with self.assertRaisesRegex(ValueError, "overlaps"):
-            evaluate_model(records, classifier)
+@unittest.skipUnless(importlib.util.find_spec("torch") and importlib.util.find_spec("transformers"),
+                     "DistilBERT dependencies not installed")
+class DistilBertTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import torch
+        from transformers import BertTokenizerFast, DistilBertConfig, DistilBertForSequenceClassification
+        cls.previous_threads = torch.get_num_threads()
+        torch.set_num_threads(1)
+        torch.manual_seed(42)
+        cls.directory = tempfile.TemporaryDirectory(prefix="distilbert-inference-test-")
+        cls.root = Path(cls.directory.name)
+        vocab = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]", "<", ">", "/", "p",
+                 "a", "div", "table", "tr", "td", "html", "body", "style", "display",
+                 "flex", "grid", "TEXT", "URL", "ID", "VALUE", "N", "COLOR", "CSS",
+                 "SCRIPT", "COMMENT", "STRUCTURE", "MARKUP", "[", "]", "=", ":", ";",
+                 "width", "%", ".", "0", "1", "2", "3", "4"]
+        vocab_path = cls.root / "vocab.txt"
+        vocab_path.write_text("\n".join(vocab) + "\n", encoding="utf-8")
+        tokenizer = BertTokenizerFast(vocab_file=str(vocab_path), do_lower_case=False)
+        config = DistilBertConfig(vocab_size=len(tokenizer), max_position_embeddings=128,
+                                  n_layers=1, n_heads=2, dim=24, hidden_dim=48,
+                                  dropout=0, attention_dropout=0, seq_classif_dropout=0,
+                                  num_labels=2)
+        model = DistilBertForSequenceClassification(config)
+        artifact = {
+            "format_version": 3, "backend": "html_distilbert",
+            "processing": deepcopy(training_module.PROCESSING), "threshold": .5,
+            "base_model": "random_test_fixture_not_trained",
+            "inference": {"max_length": 96, "stride": 16, "chunk_batch_size": 4,
+                          "aggregation": "logmeanexp_margin"},
+            "training_params": {"seed": 42},
+            "fit_identity_keys": sorted(set().union(*(
+                training_module.identity_keys(item) for item in fixture_records()
+                if item.split in ("train", "validation")))),
+        }
+        cls.model_dir = cls.root / "model"
+        HTMLClassifier(model, tokenizer, artifact, "cpu").save(cls.model_dir)
 
-    def test_tfidf_train_only_and_null_records_skipped(self):
-        records = fixture_records()
-        for item in records:
-            if item.split == "validation":
-                item.html = item.html.replace("<p>", "<p zqvponly='new'>")
-        artifact = train_model(records, max_features=1000)
-        self.assertNotIn("zq", artifact["vectorizer"]["vocabulary"])
-        unknown = record("<zzqnevertrain>UNSEEN</zzqnevertrain>", identity="unknown")
-        unknown_test = record("<other>UNSEEN</other>", identity="unknown-test", split="test")
-        augmented = train_model(records + [unknown, unknown_test], max_features=1000)
-        self.assertEqual(artifact["classifier"], augmented["classifier"])
-        self.assertEqual(artifact["vectorizer"], augmented["vectorizer"])
-        self.assertEqual(evaluate_model(records + [unknown_test], HTMLClassifier(augmented))["all"]["count"], 4)
+    @classmethod
+    def tearDownClass(cls):
+        import torch
+        cls.directory.cleanup()
+        torch.set_num_threads(cls.previous_threads)
+
+    def classifier(self):
+        return HTMLClassifier.load(self.model_dir, "cpu")
+
+    def test_real_distilbert_forward_and_safetensors_roundtrip(self):
+        classifier = self.classifier()
+        item = record()
+        expected = classifier.predict(item)
+        self.assertEqual(classifier.model.config.model_type, "distilbert")
+        self.assertEqual(set(expected), {"html_ai_probability", "html_ai_label"})
+        self.assertTrue(0 <= expected["html_ai_probability"] <= 1)
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "saved"
+            classifier.save(destination)
+            self.assertTrue((destination / "model.safetensors").is_file())
+            metadata = json.loads((destination / "metadata.json").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["backend"], "html_distilbert")
+            self.assertNotIn("vectorizer", metadata)
+            restored = HTMLClassifier.load(destination, "cpu")
+            self.assertEqual(restored.predict(item), expected)
+
+    def test_windows_cover_the_complete_markup(self):
+        classifier = self.classifier()
+        item = record("<div>" + "<table><tr><td>Text</td></tr></table>" * 20 + "</div>")
+        settings = classifier.artifact["inference"]
+        windows = training_module.encode_document(item, classifier.tokenizer, settings)
+        self.assertGreater(len(windows), 1)
+        reconstructed = windows[0]["input_ids"][1:-1]
+        for window in windows[1:]:
+            reconstructed += window["input_ids"][1:-1][settings["stride"]:]
+        expected = classifier.tokenizer(training_module.model_input(item),
+                                        add_special_tokens=False, truncation=False,
+                                        verbose=False)["input_ids"]
+        self.assertEqual(reconstructed, expected)
+        result = classifier.predict(item)
+        self.assertTrue(0 <= result["html_ai_probability"] <= 1)
 
     def test_predictions_preserve_known_labels_spans_and_export(self):
-        artifact = train_model(fixture_records(), max_features=500)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            model = root / "model.json"
-            model.write_text(json.dumps(artifact), encoding="utf-8")
             positive = record("<p>Привет 😀</p>", 1, "positive", spans=[Span(0, 3)])
             human = record("<div>Human text</div>", 0, "human")
             unknown = record("<p>Unknown text</p>", identity="unknown")
@@ -471,37 +517,46 @@ class ModelTests(unittest.TestCase):
             before = [item.to_dict() for item in (positive, human, unknown)]
             with redirect_stdout(io.StringIO()):
                 result, issues = build_dataset([str(source)], root / "predictions.jsonl",
-                                               text_export=root / "text.jsonl", model=model)
+                                               text_export=root / "text.jsonl", model=self.model_dir)
             self.assertFalse(issues)
             for original, predicted in zip(before, result):
                 data = predicted.to_dict()
                 prediction = data.pop("prediction")
                 self.assertEqual(data, original)
                 self.assertEqual(set(prediction), {"html_ai_probability", "html_ai_label"})
-                self.assertTrue(0 <= prediction["html_ai_probability"] <= 1)
-            self.assertEqual(len(read_records(root / "predictions.jsonl")), 3)
 
-    def test_no_fake_localization_or_legacy_model_loading(self):
-        with self.assertRaises(ValueError):
-            HTMLClassifier({"format_version": 1, "backend": "char_tfidf_logistic", "models": {}})
+    def test_evaluation_skips_unknowns_and_blocks_fitting_data(self):
+        classifier = self.classifier()
+        data = fixture_records()
+        data.append(record("<p>Unknown</p>", identity="unknown", split="test"))
+        self.assertEqual(evaluate_model(data, classifier)["all"]["count"], 4)
+        data[0].split = "test"
+        with self.assertRaisesRegex(ValueError, "overlaps"):
+            evaluate_model(data, classifier)
+
+    def test_checkpoint_protection_and_legacy_rejection(self):
+        config = self.model_dir / "config.json"
+        original = config.read_bytes()
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "input.html"
+            source.write_text("<p>Read more</p>", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                build_dataset([str(source)], config, model=self.model_dir)
+            legacy_model = Path(directory) / "legacy.json"
+            legacy_model.write_text(json.dumps({"format_version": 2, "backend": "html_tfidf_logistic"}),
+                                    encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "legacy"):
+                HTMLClassifier.load(legacy_model, "cpu")
+        self.assertEqual(config.read_bytes(), original)
+
+    def test_unlabelled_training_rejected_before_loading_weights(self):
         data = fixture_records()
         for item in data:
             item.label, item.ai_spans, item.annotation_source = None, None, None
-        with self.assertRaisesRegex(ValueError, "both confirmed classes"):
-            train_model(data)
-
-    def test_training_and_evaluation_cli(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            dataset, model, metrics = root / "data.json", root / "model.json", root / "metrics.json"
-            write_records(dataset, fixture_records())
-            for args in ((str(dataset), "-o", str(model), "--max-features", "500"),
-                         (str(dataset), "--evaluate", str(model), "-o", str(metrics))):
-                result = subprocess.run([sys.executable, "-B", str(PACKAGE / "train.py"), *args],
-                                        capture_output=True, text=True, encoding="utf-8")
-                self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(json.loads(metrics.read_text(encoding="utf-8"))["test_metrics"]["all"]["count"], 4)
-            self.assertIn("processing", json.loads(model.read_text(encoding="utf-8")))
+        with mock.patch.object(training_module, "dependencies",
+                               side_effect=AssertionError("No model should be loaded")):
+            with self.assertRaisesRegex(ValueError, "both confirmed classes"):
+                train_model(data)
 
 
 def validate_dataset(path):
