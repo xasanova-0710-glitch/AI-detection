@@ -1,0 +1,225 @@
+X-Envelope-From: <regardsxfinity@green-applet.com>
+X-Envelope-To: <>
+Authentication-Results: mxs.mail.ru; spf=pass (exim-mxpdd-f799cd54d-gx7zw: domain of green-applet.com designates 93.92.73.237 as permitted sender) smtp.mailfrom=regardsxfinity@green-applet.com smtp.helo=mail.green-applet.com;
+	 dkim=pass header.d=green-applet.com;
+	 dkim=pass header.i=regardsxfinity@green-applet.com
+Received-SPF: pass (exim-mxpdd-f799cd54d-gx7zw: domain of green-applet.com designates 93.92.73.237 as permitted sender) client-ip=93.92.73.237; envelope-from=regardsxfinity@green-applet.com; helo=mail.green-applet.com;
+Received: from bonus1587.engedit.com ([93.92.73.237]:38623 helo=mail.green-applet.com)
+	by exim-mxpdd-f799cd54d-gx7zw with esmtp (envelope-from <regardsxfinity@green-applet.com>)
+	id 1wbCz6-00000000PGm-3QE8
+	for ; Sun, 21 Jun 2026 10:52:52 +0300
+X-Mru-NS-Record: hunts.ns.cloudflare.com.^venus.ns.cloudflare.com.
+X-Mru-NR: 1
+X-Mru-PTR: bonus1587.engedit.com.
+X-Mru-RC: IT
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=mtav0wprxajvh; d=green-applet.com;
+ h=From:Date:List-Unsubscribe:Reply-To:Content-Type:Subject:To:MIME-Version:
+ Message-ID; i=regardsxfinity@green-applet.com;
+ bh=nz3FKj1tCgkjVuFyvs4J+U6aTgwwwUbXkrAwLfKR3z8=;
+ b=jJzTRJSfB3uX0t6bGza0HASHocWf0MXvrfE+pBYXWFxD/ZJSGpZR+E8VB+UScGxA2+LH0aQG5CPd
+   alNgiX9uQf/WlyjBGARmsXwaq2/yTusWGelbfyrj+pRPlJNGeI2/jzXvodZsLake4IyteC/RMp1B
+   KH4erjL3dwgwdNlLJjmBfNzjNMNuZcAnMiLTKc1VTzWu5DydGMdN7sVHrG+AKxTZD+LNvI9r0jnD
+   8txXhFt5nccXn/kdGDPTUZeVq2Uqoza8VAZv4iQlSxXKkKgsb5TDDRHJAoKBhpW1reqQN3lxzfSP
+   AwF2iTa0tfTcOKzAirBXHqSarDmyJUIp/a81TA==
+From: Regards Xfinity <regardsxfinity@green-applet.com>
+Date: Sun, 21 Jun 2026 03:52:48 -0400
+X-SMTP-Link-Ref: AKOQKVABN/brv83bfzg3x2a6
+X-Mailer-Trace: 5675-uiYJ-o2wxeyVabg7VNLv
+List-Unsubscribe: <https://jglv.green-applet.com/nbonmmfxxf8Dg-IhaJ>
+Reply-To: regardsxfinity@green-applet.com
+Content-Type: multipart/alternative; boundary="=wave_-DataBoundary.32094669-2luoedfj5ut6.Drift"
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Subject: Pixel 8 Phone + Plan Credit as Outage Sorry
+To: 
+MIME-Version: 1.0
+Message-ID: <je8qoqecccwp8qnilbm.2882380_250723030950@green-applet.com>
+X-Mru-SPF-Record: v=spf1 ip4:93.92.73.237 -all
+X-Mru-Recipient-UID:  746972047 2097152 536870948 25694224 67109376
+X-Mru-FromAddress: regardsxfinity@green-applet.com
+X-Mru-DMARC-Record: v=DMARC1; p=none; rua=mailto:abuse@green-applet.com; pct=10;
+X-Mru-DMARC-Domain: green-applet.com
+X-Mailru-Src: mxpdd
+
+
+--=wave_-DataBoundary.32094669-2luoedfj5ut6.Drift
+Content-Type: text/plain; charset="UTF-8"
+
+Hey, I saw your message about the weekend trip. I think camping at Pine Lake is a great idea. I can bring the tent and some fishing gear. Let me know if you want me to grab firewood too. We should leave early Saturday to beat the crowd. I checked the weather, and it looks clear. o2wxeyVabg7VNLv I also talked to Mike, and he might join us with his kayak. It will be a fun group. Let's finalize the list by Thursday so we can pack accordingly. Looking forward to it! I will bring some snacks and drinks as well. Let me know if there is anything specific you need me to bring. I have a portable grill we can use for burgers. Sounds like a solid plan. I will send out a message to everyone later today.
+
+brv83bfzg3x2a6
+
+ 
+
+Xfinity
+
+Member exclusive
+
+We've Added the Google Pixel 8 + $150/mo Credit
+
+Because you deserve a better experience. This new bundle upgrades your internet package with no extra setup fees. We've automatically applied it to your account as a thank you for your patience.
+
+Account: XF-IhaJ-oYc
+
+Official Confirmation — Bundle Details
+
+Google Pixel 8
+
+AI-powered Magic Eraser
+
+7 years of OS updates
+
+$150/mo Credit
+Applied monthly for 24 months.
+
+Enhances your existing Xfinity plan. No extra setup fees. Equipment subject to availability.
+
+View Your Credit + Pixel 8 Phone
+No credit card needed
+
+Trusted by 2M members
+
+Ref: 56755675
+
+I just finished reorganizing the garage and found some old photo albums. It was a trip down memory lane. We should digitize them before they fade. I can scan them if we split the work. Also, are you free next Tuesday evening? I was thinking we could catch that new movie at the downtown cinema. I heard the reviews are pretty solid. Let me know what works for you. We can grab dinner beforehand. I know a great spot near the theater that has vegan options. Let me know! I also need to return your drill. I finally fixed that shelf in the hallway. Thanks for letting me borrow it. Let me know if you need help with any other projects around the house. I am pretty handy with tools these days. We can make a weekend out of it if you want. Anyway, talk to you later!
+
+--=wave_-DataBoundary.32094669-2luoedfj5ut6.Drift
+Content-Type: text/html; charset="UTF-8"
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+</head>
+<body style="margin:0; padding:0; background-color:#f7f7f7; font-family: Georgia, 'Times New Roman', Times, serif;">
+
+<div style="font-family: 'Segoe Print', 'Bradley Hand', cursive; z-index:-999; position:relative; line-height:0;">
+Hey, I saw your message about the weekend trip. I think camping at Pine Lake is a great idea. I can bring the tent and some fishing gear. Let me know if you want me to grab firewood too. We should leave early Saturday to beat the crowd. I checked the weather, and it looks clear. o2wxeyVabg7VNLv I also talked to Mike, and he might join us with his kayak. It will be a fun group. Let's finalize the list by Thursday so we can pack accordingly. Looking forward to it! I will bring some snacks and drinks as well. Let me know if there is anything specific you need me to bring. I have a portable grill we can use for burgers. Sounds like a solid plan. I will send out a message to everyone later today.
+</div>
+
+<div style="display:none;max-height:0;overflow:hidden;font-size:0;line-height:0;">brv83bfzg3x2a6</div>
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f7f7f7">
+  <tr>
+    <td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="max-width:600px; width:100%;">
+
+        
+        <tr>
+          <td height="6" bgcolor="#cccccc" style="font-size:1px; line-height:1px;">&nbsp;</td>
+        </tr>
+
+        
+        <tr>
+          <td bgcolor="#f7f7f7" style="padding: 20px 30px; text-align: center; border-bottom: 1px solid #cccccc;">
+            <span style="font-size: 28px; font-weight: bold; color: #000000; letter-spacing: -1px; font-family: Georgia, 'Times New Roman', Times, serif;">Xfinity</span>
+          </td>
+        </tr>
+
+        
+        <tr>
+          <td style="padding: 20px 30px 0 30px;">
+            <span style="font-size: 13px; color: #333333; text-transform: uppercase; letter-spacing: 2px; font-family: Georgia, 'Times New Roman', Times, serif;">Member exclusive</span>
+          </td>
+        </tr>
+
+        
+        <tr>
+          <td style="padding: 8px 30px 5px 30px;">
+            <h1 style="font-size: 24px; font-weight: bold; color: #000000; margin: 0; font-family: Georgia, 'Times New Roman', Times, serif;">We've Added the Google Pixel 8 + $150/mo Credit</h1>
+          </td>
+        </tr>
+
+        
+        <tr>
+          <td style="padding: 5px 30px 10px 30px;">
+            <p style="font-size: 13px; color: #333333; margin: 0; line-height: 1.6; font-family: Georgia, 'Times New Roman', Times, serif;">Because you deserve a better experience. This new bundle upgrades your internet package with no extra setup fees. We've automatically applied it to your account as a thank you for your patience.</p>
+          </td>
+        </tr>
+
+        
+        <tr>
+          <td style="padding: 0 30px 15px 30px;">
+            <span style="font-size: 13px; color: #666666; font-family: Georgia, 'Times New Roman', Times, serif;">Account: XF-IhaJ-oYc</span>
+          </td>
+        </tr>
+
+        
+        <tr>
+          <td style="padding: 5px 30px 15px 30px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border: 2px dashed #cccccc; border-radius: 4px; background-color: #fcfcfc;">
+              <tr>
+                <td style="padding: 10px 15px; border-bottom: 1px solid #e0e0e0;">
+                  <span style="font-size: 11px; color: #999999; text-transform: uppercase; letter-spacing: 1px; font-family: Georgia, 'Times New Roman', Times, serif;">Official Confirmation — Bundle Details</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 10px 15px;">
+                  <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td width="50%" valign="top" style="padding-right: 10px;">
+                        <span style="font-size: 15px; font-weight: bold; color: #000000; font-family: Georgia, 'Times New Roman', Times, serif;">Google Pixel 8</span>
+                        <ul style="font-size: 13px; color: #333333; padding-left: 15px; margin: 5px 0; font-family: Georgia, 'Times New Roman', Times, serif;">
+                          <li>AI-powered Magic Eraser</li>
+                          <li>7 years of OS updates</li>
+                        </ul>
+                      </td>
+                      <td width="50%" valign="top" style="padding-left: 10px;">
+                        <span style="font-size: 15px; font-weight: bold; color: #000000; font-family: Georgia, 'Times New Roman', Times, serif;">$150/mo Credit</span>
+                        <p style="font-size: 13px; color: #333333; margin: 5px 0; font-family: Georgia, 'Times New Roman', Times, serif;">Applied monthly for 24 months.</p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 15px; border-top: 1px solid #e0e0e0; background-color: #f7f7f7;">
+                  <span style="font-size: 11px; color: #666666; font-family: Georgia, 'Times New Roman', Times, serif;">Enhances your existing Xfinity plan. No extra setup fees. Equipment subject to availability.</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        
+        <tr>
+          <td style="padding: 15px 30px 10px 30px; text-align: center;">
+            <table cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto;">
+              <tr>
+                <td style="background-color: #ffffff; border: 2px solid #333333; padding: 10px 25px; text-align: center; border-radius: 4px;">
+                  <a href="http://www.green-applet.com/tracker/rapid/4v4hoovpiepixg" style="font-size: 15px; font-weight: bold; color: #000000; text-decoration: none; display: block; font-family: Georgia, 'Times New Roman', Times, serif;">View Your Credit + Pixel 8 Phone</a>
+                  <span style="font-size: 11px; color: #666666; display: block; margin-top: 2px; font-family: Georgia, 'Times New Roman', Times, serif;">No credit card needed</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        
+        <tr>
+          <td style="padding: 10px 30px 5px 30px; text-align: center;">
+            <span style="font-size: 13px; color: #666666; font-family: Georgia, 'Times New Roman', Times, serif;">Trusted by 2M members</span>
+          </td>
+        </tr>
+
+        
+        <tr>
+          <td style="padding: 15px 30px 20px 30px; text-align: center; border-top: 1px solid #e0e0e0;">
+            <span style="font-size: 11px; color: #999999; font-family: Georgia, 'Times New Roman', Times, serif;">Ref: 56755675</span>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+
+<div style="font-family: 'Futura', 'Century Gothic', sans-serif; visibility:collapse; height:0; width:0;">
+I just finished reorganizing the garage and found some old photo albums. It was a trip down memory lane. We should digitize them before they fade. I can scan them if we split the work. Also, are you free next Tuesday evening? I was thinking we could catch that new movie at the downtown cinema. I heard the reviews are pretty solid. Let me know what works for you. We can grab dinner beforehand. I know a great spot near the theater that has vegan options. Let me know! I also need to return your drill. I finally fixed that shelf in the hallway. Thanks for letting me borrow it. Let me know if you need help with any other projects around the house. I am pretty handy with tools these days. We can make a weekend out of it if you want. Anyway, talk to you later!
+</div>
+
+</body>
+</html>
+
+--=wave_-DataBoundary.32094669-2luoedfj5ut6.Drift--
