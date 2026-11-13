@@ -70,3 +70,4 @@ def analyze_ai_signs(image_path):
 
 test_img = '/kaggle/input/datasets/yassaabram/qt-detect-yolo/QR-1/valid/images/003_jpg.rf.62920359c53e8497c278fefabe4d6bac.jpg'
 analyze_ai_signs(test_img)
+
